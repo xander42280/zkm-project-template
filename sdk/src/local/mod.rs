@@ -1,1 +1,2 @@
-pub mod cpu;
+pub mod local;
+pub mod prover;
