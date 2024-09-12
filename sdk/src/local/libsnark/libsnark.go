@@ -5,6 +5,7 @@ import (
 )
 import "fmt"
 
+//export Stark2Snark
 func Stark2Snark(inputdir *C.char, outputdir *C.char) C.int {
 	// Convert C strings to Go strings
 	inputDir := C.GoString(inputdir)
