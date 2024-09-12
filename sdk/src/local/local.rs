@@ -6,16 +6,19 @@ use std::time::Duration;
 use crate::prover::{Prover, ProverInput, ProverResult};
 use async_trait::async_trait;
 use std::time::Instant;
+use std::fs;
 
 pub struct ProverTask {
+    proof_id: String,
     input: ProverInput,
     result: Option<ProverResult>,
     is_done: bool,
 }
 
 impl ProverTask {
-    fn new(input: &ProverInput) -> ProverTask {
+    fn new(proof_id: &str, input: &ProverInput) -> ProverTask {
         ProverTask {
+            proof_id: proof_id.to_string(),
             input: input.clone(),
             result: None,
             is_done: false,
@@ -24,13 +27,23 @@ impl ProverTask {
 
     fn run(&mut self) {
         let mut result = ProverResult::default();
-        crate::local::prover::prove_stark(&self.input, &mut result);
+        let inputdir = format!("/tmp/{}/input", self.proof_id);
+        let outputdir = format!("/tmp/{}/output", self.proof_id);
+        fs::create_dir_all(&inputdir).unwrap();
+        fs::create_dir_all(&outputdir).unwrap();
+        crate::local::prover::prove_stark(&self.input, &inputdir, &mut result);
         if self.input.execute_only {
             result.proof_with_public_inputs = vec![];
             result.stark_proof = vec![];
             result.solidity_verifier = vec![];
         } else {
-            // TODO stark -> snark
+            if crate::local::snark::prove_snark(&inputdir, &outputdir) {
+                result.stark_proof = std::fs::read(format!("{}/proof_with_public_inputs.json", inputdir)).unwrap();
+                result.proof_with_public_inputs = std::fs::read(format!("{}/snark_proof_with_public_inputs.json", outputdir)).unwrap();
+                // result.solidity_verifier = std::fs::read(format!("{}/solidity_verifier", outputdir)).unwrap();
+            } else {
+                log::error!("Failed to generate snark proof.");
+            }
         }
         self.result = Some(result);
         self.is_done = true;
@@ -57,7 +70,7 @@ impl LocalProver {
 impl Prover for LocalProver {
     async fn request_proof<'a>(&self, input: &'a ProverInput) -> anyhow::Result<String> {
         let proof_id: String = uuid::Uuid::new_v4().to_string();
-        let task: Arc<Mutex<ProverTask>> = Arc::new(Mutex::new(ProverTask::new(input)));
+        let task: Arc<Mutex<ProverTask>> = Arc::new(Mutex::new(ProverTask::new(&proof_id, input)));
         self.tasks
             .lock()
             .unwrap()

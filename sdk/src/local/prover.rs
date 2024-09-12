@@ -1,4 +1,3 @@
-use std::env;
 use std::fs::File;
 use std::io::BufReader;
 use std::ops::Range;
@@ -63,6 +62,7 @@ fn prove_multi_seg_common(
     basedir: &str,
     block: &str,
     file: &str,
+    outdir: &str,
     seg_size: usize,
     seg_file_number: usize,
     seg_start_id: usize,
@@ -98,7 +98,7 @@ fn prove_multi_seg_common(
 
     let mut base_seg = seg_start_id + 1;
     let mut seg_num = seg_file_number - 1;
-    let mut is_agg = false;
+    let mut is_agg: bool = false;
 
     if seg_file_number % 2 == 0 {
         let seg_file = format!("{}/{}", seg_dir, seg_start_id + 1);
@@ -207,8 +207,6 @@ fn prove_multi_seg_common(
     );
     let result = all_circuits.verify_block(&block_proof);
 
-    let build_path = "../verifier/data".to_string();
-    let path = format!("{}/test_circuit/", build_path);
     let builder = WrapperBuilder::<DefaultParameters, 2>::new();
     let mut circuit = builder.build();
     circuit.set_data(all_circuits.block.circuit);
@@ -222,14 +220,14 @@ fn prove_multi_seg_common(
     log::info!("build finish");
 
     let wrapped_proof = wrapped_circuit.prove(&block_proof).unwrap();
-    wrapped_proof.save(path).unwrap();
+    wrapped_proof.save(outdir).unwrap();
 
     total_timing.filter(Duration::from_millis(100)).print();
     result
 }
 
-pub fn prove_stark(input: &ProverInput, result: &mut ProverResult) {
-    let seg_path = env::var("SEG_OUTPUT").unwrap_or("/tmp/segments".to_string());
+pub fn prove_stark(input: &ProverInput, storedir: &str, result: &mut ProverResult) {
+    let seg_path = format!("{}/segments", storedir);
     let seg_size = input.seg_size as usize;
     let file = ElfBytes::<AnyEndian>::minimal_parse(input.elf.as_slice())
         .expect("opening elf file failed");
@@ -256,6 +254,6 @@ pub fn prove_stark(input: &ProverInput, result: &mut ProverResult) {
         let seg_file = format!("{seg_path}/{}", 0);
         prove_single_seg_common(&seg_file, "", "", "", total_steps)
     } else {
-        prove_multi_seg_common(&seg_path, "", "", "", seg_size, seg_num, 0).unwrap()
+        prove_multi_seg_common(&seg_path, "", "", "",  storedir, seg_size, seg_num, 0).unwrap()
     }
 }
