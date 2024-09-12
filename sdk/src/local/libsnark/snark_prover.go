@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"text/template"
 
 	"math/big"
 	"os"
@@ -14,6 +17,7 @@ import (
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
+	groth16_bn254 "github.com/consensys/gnark/backend/groth16/bn254"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
@@ -167,8 +171,51 @@ func (obj *SnarkProver) groth16ProofWithCache(r1cs constraint.ConstraintSystem, 
 	return nil
 }
 
+func (obj *SnarkProver) generateVerifySol(outputDir string) error {
+	tmpl, err := template.New("contract").Parse(Gtemplate)
+	if err != nil {
+		return err
+	}
+
+	type VerifyingKeyConfig struct {
+		Alpha     string
+		Beta      string
+		Gamma     string
+		Delta     string
+		Gamma_abc string
+	}
+
+	var config VerifyingKeyConfig
+	vk := obj.vk.(*groth16_bn254.VerifyingKey)
+
+	config.Alpha = fmt.Sprint("Pairing.G1Point(uint256(", vk.G1.Alpha.X.String(), "), uint256(", vk.G1.Alpha.Y.String(), "))")
+	config.Beta = fmt.Sprint("Pairing.G2Point([uint256(", vk.G2.Beta.X.A0.String(), "), uint256(", vk.G2.Beta.X.A1.String(), ")], [uint256(", vk.G2.Beta.Y.A0.String(), "), uint256(", vk.G2.Beta.Y.A1.String(), ")])")
+	config.Gamma = fmt.Sprint("Pairing.G2Point([uint256(", vk.G2.Gamma.X.A0.String(), "), uint256(", vk.G2.Gamma.X.A1.String(), ")], [uint256(", vk.G2.Gamma.Y.A0.String(), "), uint256(", vk.G2.Gamma.Y.A1.String(), ")])")
+	config.Delta = fmt.Sprint("Pairing.G2Point([uint256(", vk.G2.Delta.X.A0.String(), "), uint256(", vk.G2.Delta.X.A1.String(), ")], [uint256(", vk.G2.Delta.Y.A0.String(), "), uint256(", vk.G2.Delta.Y.A1.String(), ")])")
+	config.Gamma_abc = fmt.Sprint("vk.gamma_abc = new Pairing.G1Point[](", len(vk.G1.K), ");\n")
+	for k, v := range vk.G1.K {
+		config.Gamma_abc += fmt.Sprint("        vk.gamma_abc[", k, "] = Pairing.G1Point(uint256(", v.X.String(), "), uint256(", v.Y.String(), "));\n")
+	}
+	var buf bytes.Buffer
+	err = tmpl.Execute(&buf, config)
+	if err != nil {
+		return err
+	}
+	fSol, _ := os.Create(filepath.Join(outputDir, "verifier.sol"))
+	_, err = fSol.Write(buf.Bytes())
+	if err != nil {
+		return err
+	}
+	fSol.Close()
+	return nil
+}
+
 func (obj *SnarkProver) Prove(inputdir string, outputdir string) error {
 	if err := obj.init_circuit_keys(inputdir); err != nil {
+		return err
+	}
+
+	if err := obj.generateVerifySol(outputdir); err != nil {
 		return err
 	}
 

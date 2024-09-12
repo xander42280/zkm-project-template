@@ -40,7 +40,7 @@ impl ProverTask {
             if crate::local::snark::prove_snark(&inputdir, &outputdir) {
                 result.stark_proof = std::fs::read(format!("{}/proof_with_public_inputs.json", inputdir)).unwrap();
                 result.proof_with_public_inputs = std::fs::read(format!("{}/snark_proof_with_public_inputs.json", outputdir)).unwrap();
-                // result.solidity_verifier = std::fs::read(format!("{}/solidity_verifier", outputdir)).unwrap();
+                result.solidity_verifier = std::fs::read(format!("{}/verifier.sol", outputdir)).unwrap();
             } else {
                 log::error!("Failed to generate snark proof.");
             }
