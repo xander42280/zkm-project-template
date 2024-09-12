@@ -1,7 +1,5 @@
-use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs::File;
-use std::io::prelude::*;
 use std::io::BufReader;
 use std::ops::Range;
 use std::time::Duration;
@@ -13,9 +11,7 @@ use plonky2x::backend::circuit::Groth16WrapperParameters;
 use plonky2x::backend::wrapper::wrap::WrappedCircuit;
 use plonky2x::frontend::builder::CircuitBuilder as WrapperBuilder;
 use plonky2x::prelude::DefaultParameters;
-use zkm_emulator::utils::{
-    get_block_path, load_elf_with_patch, split_prog_into_segs, SEGMENT_STEPS,
-};
+use zkm_emulator::utils::split_prog_into_segs;
 use zkm_prover::all_stark::AllStark;
 use zkm_prover::config::StarkConfig;
 use zkm_prover::cpu::kernel::assembler::segment_kernel;
@@ -25,26 +21,11 @@ use zkm_prover::proof::PublicValues;
 use zkm_prover::prover::prove;
 use zkm_prover::verifier::verify_proof;
 
+use crate::prover::{ProverInput, ProverResult};
+use elf::{endian::AnyEndian, ElfBytes};
+use zkm_emulator::state::State;
+
 const DEGREE_BITS_RANGE: [Range<usize>; 6] = [10..21, 12..22, 12..21, 8..21, 6..21, 13..23];
-
-fn split_segments() {
-    // 1. split ELF into segs
-    let basedir = env::var("BASEDIR").unwrap_or("/tmp/cannon".to_string());
-    let elf_path = env::var("ELF_PATH").expect("ELF file is missing");
-    let block_no = env::var("BLOCK_NO").unwrap_or("".to_string());
-    let seg_path = env::var("SEG_OUTPUT").expect("Segment output path is missing");
-    let seg_size = env::var("SEG_SIZE").unwrap_or(format!("{SEGMENT_STEPS}"));
-    let seg_size = seg_size.parse::<_>().unwrap_or(SEGMENT_STEPS);
-    let args = env::var("ARGS").unwrap_or("".to_string());
-    let args = args.split_whitespace().collect();
-
-    let mut state = load_elf_with_patch(&elf_path, args);
-    let block_path = get_block_path(&basedir, &block_no, "");
-    if !block_no.is_empty() {
-        state.load_input(&block_path);
-    }
-    let _ = split_prog_into_segs(state, &seg_path, &block_path, seg_size);
-}
 
 fn prove_single_seg_common(
     seg_file: &str,
@@ -247,28 +228,30 @@ fn prove_multi_seg_common(
     result
 }
 
-fn prove_revm() {
-    // 1. split ELF into segs
-    let elf_path = env::var("ELF_PATH").expect("ELF file is missing");
-    let seg_path = env::var("SEG_OUTPUT").expect("Segment output path is missing");
-    let json_path = env::var("JSON_PATH").expect("JSON file is missing");
-    let seg_size = env::var("SEG_SIZE").unwrap_or("0".to_string());
-    let seg_size = seg_size.parse::<_>().unwrap_or(0);
-    let mut f = File::open(json_path).unwrap();
-    let mut data = vec![];
-    f.read_to_end(&mut data).unwrap();
+pub fn prove_stark(input: &ProverInput, result: &mut ProverResult) {
+    let seg_path = env::var("SEG_OUTPUT").unwrap_or("/tmp/segments".to_string());
+    let seg_size = input.seg_size as usize;
+    let file = ElfBytes::<AnyEndian>::minimal_parse(input.elf.as_slice())
+        .expect("opening elf file failed");
+    let mut state = State::load_elf(&file);
+    state.patch_elf(&file);
+    state.patch_stack(vec![]);
 
-    let mut state = load_elf_with_patch(&elf_path, vec![]);
-    // load input
-    state.add_input_stream(&data);
+    state.add_input_stream(&input.public_inputstream);
+    state.add_input_stream(&input.private_inputstream);
 
-    let (total_steps, mut _state) = split_prog_into_segs(state, &seg_path, "", seg_size);
+    let (total_steps, state) = split_prog_into_segs(state, &seg_path, "", seg_size);
+    result
+        .output_stream
+        .copy_from_slice(&state.public_values_stream);
+    if input.execute_only {
+        return;
+    }
 
     let mut seg_num = 1usize;
     if seg_size != 0 {
         seg_num = (total_steps + seg_size - 1) / seg_size;
     }
-
     if seg_num == 1 {
         let seg_file = format!("{seg_path}/{}", 0);
         prove_single_seg_common(&seg_file, "", "", "", total_steps)
