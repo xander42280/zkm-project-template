@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use crate::prover::{Prover, ProverInput, ProverResult};
 use async_trait::async_trait;
-use std::time::Instant;
 use std::fs;
+use std::time::Instant;
 
 pub struct ProverTask {
     proof_id: String,
@@ -38,9 +38,13 @@ impl ProverTask {
             result.solidity_verifier = vec![];
         } else {
             if crate::local::snark::prove_snark(&inputdir, &outputdir) {
-                result.stark_proof = std::fs::read(format!("{}/proof_with_public_inputs.json", inputdir)).unwrap();
-                result.proof_with_public_inputs = std::fs::read(format!("{}/snark_proof_with_public_inputs.json", outputdir)).unwrap();
-                result.solidity_verifier = std::fs::read(format!("{}/verifier.sol", outputdir)).unwrap();
+                result.stark_proof =
+                    std::fs::read(format!("{}/proof_with_public_inputs.json", inputdir)).unwrap();
+                result.proof_with_public_inputs =
+                    std::fs::read(format!("{}/snark_proof_with_public_inputs.json", outputdir))
+                        .unwrap();
+                result.solidity_verifier =
+                    std::fs::read(format!("{}/verifier.sol", outputdir)).unwrap();
             } else {
                 log::error!("Failed to generate snark proof.");
             }

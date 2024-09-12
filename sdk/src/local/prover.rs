@@ -254,6 +254,6 @@ pub fn prove_stark(input: &ProverInput, storedir: &str, result: &mut ProverResul
         let seg_file = format!("{seg_path}/{}", 0);
         prove_single_seg_common(&seg_file, "", "", "", total_steps)
     } else {
-        prove_multi_seg_common(&seg_path, "", "", "",  storedir, seg_size, seg_num, 0).unwrap()
+        prove_multi_seg_common(&seg_path, "", "", "", storedir, seg_size, seg_num, 0).unwrap()
     }
 }
