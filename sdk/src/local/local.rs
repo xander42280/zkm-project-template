@@ -32,6 +32,7 @@ impl ProverTask {
         } else {
             // TODO stark -> snark
         }
+        self.result = Some(result);
         self.is_done = true;
     }
 
